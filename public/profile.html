@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>User Profile</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="user-profile" class="profile-container">
+      <h2 class="profile-header">User Profile</h2>
+      <p class="profile-item">
+        <strong>Registration Number:</strong>
+        <span id="regnum" class="profile-value">Loading...</span>
+      </p>
+      <p class="profile-item">
+        <strong>Name:</strong>
+        <span id="name" class="profile-value">Loading...</span>
+      </p>
+      <p class="profile-item">
+        <strong>Email ID:</strong>
+        <span id="email" class="profile-value">Loading...</span>
+      </p>
+      <button id="logout-btn" class="logout-button">Logout</button>
+    </div>
+    <script>
+      async function loadUserProfile() {
+        try {
+          const response = await fetch("/api/profile", {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          });
+          if (response.ok) {
+            const data = await response.json();
+            document.getElementById("regnum").textContent =
+              data.registrationNumber;
+            document.getElementById("name").textContent = data.name;
+            document.getElementById("email").textContent = data.email;
+          } else {
+            alert("Failed to load profile. Please log in again.");
+            window.location.href = "/";
+          }
+        } catch (error) {
+          console.error("Error loading profile:", error);
+        }
+      }
+
+      document.getElementById("logout-btn").addEventListener("click", () => {
+        localStorage.removeItem("token");
+        alert("Logged out successfully.");
+        window.location.href = "/logout";
+      });
+
+      loadUserProfile();
+    </script>
+  </body>
+</html>
