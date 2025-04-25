@@ -8,6 +8,7 @@ const session = require("express-session");
 const MongoStore = require("connect-mongo");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
+const cookieParser = require("cookie-parser");
 const os = require("os");
 require("dotenv").config();
 
@@ -46,6 +47,8 @@ app.use(
   })
 );
 
+app.use(cookieParser());
+
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
@@ -73,19 +76,34 @@ const registrationSchema = new mongoose.Schema({
   scanned: { type: Boolean, default: false },
 });
 
+// hash setter
+userSchema.methods.setPassword = async function (password) {
+  this.passwordHash = await bcrypt.hash(password, 10);
+};
+
+// comparison function
+userSchema.methods.comparePassword = function (password) {
+  return bcrypt.compare(password, this.passwordHash);
+};
+
 const User = mongoose.model("User", userSchema);
 const Event = mongoose.model("Event", eventSchema);
 const Registration = mongoose.model("Registration", registrationSchema);
 
-const authMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ message: "Unauthorized" });
+const authMiddleware = async (req, res, next) => {
+  const token = req.cookies.token;
+  if (!token)
+    return res
+      .status(401)
+      .sendFile(path.join(__dirname, "public", "login.html"));
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
+    req.user = await User.findById(decoded.id).select("-passwordHash");
+    if (!req.user) return res.status(401).json({ error: "User not found" });
     next();
-  } catch (err) {
-    res.status(401).json({ message: "Invalid token" });
+  } catch {
+    return res.status(401).json({ error: "Invalid token" });
   }
 };
 
@@ -98,39 +116,25 @@ const transporter = nodemailer.createTransport({
 });
 
 app.get("/", (req, res) => {
-  if (req.session.user) {
-    // serve public/profile.html if user is logged in
-    res.sendFile(__dirname + "/public/profile.html");
-  } else {
-    res.sendFile(__dirname + "/public/login.html");
+  if (req.cookies.token) {
+    console.log("Token cookie:", req.cookies.token);
+    return res.redirect("/home");
   }
+  res.sendFile(`${__dirname}/public/index.html`);
 });
 
-app.get("/style.css", (req, res) => {
-  res.sendFile(__dirname + "/public/style.css");
-});
-
+// Serve login frontend
 app.get("/login", (req, res) => {
-  if (req.session.user) {
-    // Redirect to the main page if already logged in
-    return res.redirect("/");
-  }
-  res.sendFile(__dirname + "/public/login.html");
+  res.sendFile(`${__dirname}/public/login.html`);
 });
 
 app.get("/logout", (req, res) => {
-  req.session.destroy((err) => {
-    if (err) {
-      console.error("Error during logout:", err);
-      return res.status(500).json({ message: "Logout failed" });
-    }
-    res.clearCookie("connect.sid");
-    res.redirect("/"); // Redirect to the login page after logout
-  });
+  res.clearCookie("token", { path: "/" });
+  res.redirect("/login");
 });
 
 app.get("/profile", authMiddleware, async (req, res) => {
-  req.sendFile(__dirname + "/public/profile.html");
+  res.sendFile(`${__dirname}/public/profile.html`);
 });
 
 app.post("/api/signup", async (req, res) => {
@@ -178,57 +182,70 @@ app.post("/api/signup", async (req, res) => {
   }
 });
 
-app.get("/api/verify", async (req, res) => {
-  const { token } = req.query;
-  const user = await User.findOne({ verificationToken: token });
-  if (!user) return res.status(400).json({ message: "Invalid token" });
-  user.verified = true;
-  user.verificationToken = undefined;
-  await user.save();
-  res.status(200).sendFile(__dirname + "/public/verified.html");
-});
-
 app.post("/api/login", async (req, res) => {
   const { loginID, password } = req.body;
-
-  let user = await User.findOne({ email: loginID });
-  if (!user) user = await User.findOne({ registrationNumber: loginID });
-
-  if (!user) return res.status(401).json({ message: "Invalid credentials" });
-
-  if (!user.verified)
-    return res.status(403).json({ message: "Email not verified" });
-
-  const valid = await bcrypt.compare(password, user.passwordHash);
-  if (!valid) return res.status(401).json({ message: "Invalid credentials" });
-
-  const token = jwt.sign(
-    { id: user._id, email: user.email },
-    process.env.JWT_SECRET
-  );
-  req.session.user = { id: user._id, email: user.email };
-  res.redirect("/"); // Redirect to the main page after login
-});
-
-app.get("/api/check-session", async (req, res) => {
-  if (req.session.user) {
-    const token = jwt.sign(
-      { id: req.session.user.id, email: req.session.user.email },
-      process.env.JWT_SECRET
-    );
-    res.json({ token });
-  } else {
-    res.status(401).json({ message: "No active session" });
+  try {
+    const user = await User.findOne({
+      $or: [{ email: loginID }, { registrationNumber: loginID }],
+    });
+    if (!user || !(await user.comparePassword(password))) {
+      return res.status(400).json({ error: "Invalid credentials" });
+    }
+    if (!user.verified) {
+      return res.status(401).json({ error: "Account not verified" });
+    }
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
+    });
+    res
+      .cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      })
+      .json({
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          registrationNumber: user.registrationNumber,
+        },
+      });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-app.post("/api/register-event/:eventId", authMiddleware, async (req, res) => {
+app.get("/home", authMiddleware, (req, res) => {
+  res.send("Welcome to the home page. Implement frontend integration.");
+});
+
+app.post("/api/register-event", authMiddleware, async (req, res) => {
+  const { eventId } = req.body;
   const userId = req.user.id;
-  const { eventId } = req.params;
-  const qrToken = `${userId}-${eventId}-${Date.now()}`;
-  await Registration.create({ userId, eventId, qrToken });
-  const qrCodeDataURL = await QRCode.toDataURL(qrToken);
-  res.json({ qrCode: qrCodeDataURL });
+
+  try {
+    const existingRegistration = await Registration.findOne({
+      userId,
+      eventId,
+    });
+    if (existingRegistration) {
+      return res
+        .status(400)
+        .json({ message: "Already registered for this event" });
+    }
+
+    const qrToken = `${userId}-${eventId}-${Date.now()}`;
+    await Registration.create({ userId, eventId, qrToken });
+    const qrCodeDataURL = await QRCode.toDataURL(qrToken);
+
+    res.json({ message: "Registered successfully", qrCode: qrCodeDataURL });
+  } catch (error) {
+    console.error("Error registering for event:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
 });
 
 app.get("/api/events", async (req, res) => {
@@ -238,7 +255,7 @@ app.get("/api/events", async (req, res) => {
 
 app.get("/api/my-events", authMiddleware, async (req, res) => {
   const registrations = await Registration.find({
-    userId: req.user.id,
+    userId: req.user._id,
   }).populate("eventId");
   res.json(registrations);
 });
@@ -253,22 +270,29 @@ app.post("/api/scan", async (req, res) => {
   res.json({ message: "Entry granted" });
 });
 
-app.get("/api/profile", async (req, res) => {
-  console.log("Session ID:", req.sessionID); // Log session ID
-  console.log("Session Data:", req.session); // Log session data
+app.get("/api/profile", authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select(
+      "id name email registrationNumber verified"
+    );
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-  if (!req.session.user) {
-    return res.status(401).json({ message: "Unauthorized: No active session" });
+    const registrations = await Registration.find({
+      userId: req.user._id,
+    }).populate("eventId");
+
+    const events = registrations.map((reg) => ({
+      event: reg.eventId,
+      qrCode: reg.qrToken,
+    }));
+
+    res.json({ user, events });
+  } catch (error) {
+    console.error("Error fetching profile:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
-
-  const user = await User.findById(req.session.user.id).select(
-    "id name email registrationNumber verified"
-  );
-  if (!user) {
-    return res.status(404).json({ message: "User not found" });
-  }
-
-  res.json(user);
 });
 
 app.post("/api/logout", (req, res) => {

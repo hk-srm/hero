@@ -3,56 +3,43 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>User Profile</title>
-    <link rel="stylesheet" href="style.css" />
-  </head>
-  <body>
-    <div id="user-profile" class="profile-container">
-      <h2 class="profile-header">User Profile</h2>
-      <p class="profile-item">
-        <strong>Registration Number:</strong>
-        <span id="regnum" class="profile-value">Loading...</span>
-      </p>
-      <p class="profile-item">
-        <strong>Name:</strong>
-        <span id="name" class="profile-value">Loading...</span>
-      </p>
-      <p class="profile-item">
-        <strong>Email ID:</strong>
-        <span id="email" class="profile-value">Loading...</span>
-      </p>
-      <button id="logout-btn" class="logout-button">Logout</button>
-    </div>
+    <title>Profile</title>
     <script>
-      async function loadUserProfile() {
+      async function fetchProfile() {
         try {
-          const response = await fetch("/api/profile", {
-            headers: {
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
-          });
+          const response = await fetch("/api/profile");
+          const data = await response.json();
+
           if (response.ok) {
-            const data = await response.json();
-            document.getElementById("regnum").textContent =
-              data.registrationNumber;
-            document.getElementById("name").textContent = data.name;
-            document.getElementById("email").textContent = data.email;
+            document.getElementById("userDetails").innerText = `
+            Name: ${data.user.name}
+            Email: ${data.user.email}
+            Registration Number: ${data.user.registrationNumber}
+          `;
+
+            const eventsList = document.getElementById("eventsList");
+            eventsList.innerHTML = ""; // Clear existing list items
+            data.events.forEach((event) => {
+              const li = document.createElement("li");
+              li.innerText = `Event: ${event.event.title}, QR Code: ${event.qrCode}`;
+              eventsList.appendChild(li);
+            });
           } else {
-            alert("Failed to load profile. Please log in again.");
-            window.location.href = "/";
+            alert(data.message || "Failed to fetch profile");
           }
         } catch (error) {
-          console.error("Error loading profile:", error);
+          console.error("Error fetching profile:", error);
+          alert("An error occurred while fetching the profile.");
         }
       }
 
-      document.getElementById("logout-btn").addEventListener("click", () => {
-        localStorage.removeItem("token");
-        alert("Logged out successfully.");
-        window.location.href = "/logout";
-      });
-
-      loadUserProfile();
+      window.onload = fetchProfile;
     </script>
+  </head>
+  <body>
+    <h1>Profile</h1>
+    <div id="userDetails"></div>
+    <h2>Registered Events</h2>
+    <ul id="eventsList"></ul>
   </body>
 </html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HKAPI Frontend</title>
+    <script>
+      async function login() {
+        const loginID = document.getElementById("loginID").value;
+        const password = document.getElementById("password").value;
+
+        const response = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ loginID, password }),
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          alert("Login successful!");
+          window.location.href = "/profile";
+        } else {
+          alert(data.error || "Login failed");
+        }
+      }
+
+      async function signup() {
+        const name = document.getElementById("name").value;
+        const email = document.getElementById("email").value;
+        const registrationNumber =
+          document.getElementById("registrationNumber").value;
+        const password = document.getElementById("password").value;
+
+        const response = await fetch("/api/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, email, registrationNumber, password }),
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          alert("Signup successful! Check your email for verification.");
+        } else {
+          alert(data.message || "Signup failed");
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <h1>HKAPI Frontend</h1>
+
+    <section id="login">
+      <h2>Login</h2>
+      <input
+        type="text"
+        id="loginID"
+        placeholder="Email or Registration Number"
+      />
+      <input type="password" id="password" placeholder="Password" />
+      <button onclick="login()">Login</button>
+    </section>
+
+    <section id="signup">
+      <h2>Signup</h2>
+      <input type="text" id="name" placeholder="Name" />
+      <input type="email" id="email" placeholder="Email" />
+      <input
+        type="text"
+        id="registrationNumber"
+        placeholder="Registration Number"
+      />
+      <input type="password" id="password" placeholder="Password" />
+      <button onclick="signup()">Signup</button>
+    </section>
+  </body>
+</html>

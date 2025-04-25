@@ -3,46 +3,36 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Event Registration</title>
-    <link rel="stylesheet" href="style.css" />
+    <title>Login</title>
+    <script>
+      async function login() {
+        const loginID = document.getElementById("loginID").value;
+        const password = document.getElementById("password").value;
+
+        const response = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ loginID, password }),
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          alert("Login successful!");
+          window.location.href = "/profile";
+        } else {
+          alert(data.error || "Login failed");
+        }
+      }
+    </script>
   </head>
   <body>
-    <div class="container">
-      <h1>Event Registration</h1>
-      <form id="signupForm" action="/api/signup" method="POST">
-        <h2>Signup</h2>
-        <input type="text" name="name" placeholder="Name" required />
-        <input type="email" name="email" placeholder="Email" required />
-        <input
-          type="number"
-          name="registrationNumber"
-          placeholder="Registration Number"
-          required
-        />
-        <input
-          type="password"
-          name="password"
-          placeholder="Password"
-          required
-        />
-        <button type="submit">Signup</button>
-      </form>
-      <form id="loginForm" action="/api/login" method="POST">
-        <h2>Login</h2>
-        <input
-          type="text"
-          name="loginID"
-          placeholder="Email or Registration Number"
-          required
-        />
-        <input
-          type="password"
-          name="password"
-          placeholder="Password"
-          required
-        />
-        <button type="submit">Login</button>
-      </form>
-    </div>
+    <h1>Login</h1>
+    <input
+      type="text"
+      id="loginID"
+      placeholder="Email or Registration Number"
+    />
+    <input type="password" id="password" placeholder="Password" />
+    <button onclick="login()">Login</button>
   </body>
 </html>
